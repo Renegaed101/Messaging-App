@@ -8,6 +8,9 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 
 # initialize list/set of all connected client's sockets
 client_sockets = set()
+#Maps users after they log in to their sockets, allows multiple log-ins from a single client
+#Format : (username:socket)
+user_socket_Mapping = {}
 # create a TCP socket
 s = socket.socket()
 # make the port as reusable port
@@ -18,6 +21,46 @@ s.bind((SERVER_HOST, SERVER_PORT))
 s.listen(5)
 print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
 
+#Placeholder accounts to test functionality while database is not set up
+#Format : (username:password)
+Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
+
+#Handles when a verifyUser request is recieved from client
+def verifyUser(user,cs):
+        if user in Accounts.keys():
+            cs.send("&1True".encode())
+            return
+        cs.send("&1False".encode())    
+        return
+
+#Handles when a verifyLogin request is recieved from client
+def verifyLogin(credentials,cs):
+    parse = credentials.split("&-!&&")
+    username = parse[0]
+    password = parse[1]
+    
+    try: 
+        if Accounts[username] == password:
+            print ("\nWelcome %s!\n" % (username))
+            cs.send("&2True".encode())
+            user_socket_Mapping[username] = cs
+        else:
+            print ('\nError ~ Incorrect Password!\n')    
+            cs.send("&2FalsePassword".encode())
+    except Exception as e:
+        print ('\nError ~ That username does not exist!\n')
+        cs.send("&2FalseUsername".encode())
+
+
+#Handles when a client want to send a message to another client
+def sendMessage(message,cs):
+    parse = message.split("&-!&&")
+    username = parse[0]
+    payload = parse[1]
+
+    user_socket_Mapping[username].send(payload.encode())
+    
+Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin}
 
 def listen_for_client(cs):
     """
@@ -27,20 +70,28 @@ def listen_for_client(cs):
     while True:
         try:
             # keep listening for a message from `cs` socket
-            msg = cs.recv(1024).decode()
+            msg = cs.recv(1024).decode() 
+            requestCode = msg[:2]
+            Requests[requestCode](msg[2:],cs)
+                      
         except Exception as e:
             # client no longer connected
             # remove it from the set
-            print(f"[!] Error: {e}")
+            #print(f"[!] Error: {e}")
+            print ("A client disconnected")
             client_sockets.remove(cs)
-        else:
+            return
+        
             # if we received a message, replace the <SEP>
             # token with ": " for nice printing
-            msg = msg.replace(separator_token, ": ")
+            #msg = msg.replace(separator_token, ": ")
+            
         # iterate over all connected sockets
-        for client_socket in client_sockets:
+        #for client_socket in client_sockets:
             # and send the message
-            client_socket.send(msg.encode())
+            #client_socket.send(msg.encode())
+  
+
 
 
 while True:
