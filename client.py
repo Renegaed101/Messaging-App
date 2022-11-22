@@ -35,15 +35,23 @@ s = socket.socket()
 print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
 # connect to the server
 s.connect((SERVER_HOST, SERVER_PORT))
-print("[+] Connected.\n")
+print("[+] Connected.")
 
-#Prototype function that creates a new account for testing menu functionality
-def createNewAccount():
-    username = input('Username: ')
-    password = input('Password: ')
-
-    Accounts[username] = password
-    print ("\nWelcome %s!\n" % (username))
+def main():    
+    # Client start up menu
+    while True:
+        selection = input("\nPlease select an option\n1.Log in\n2.Create New Account\n3.Exit Client\n")
+        if selection == '1':
+            if verifyLogin():
+                enterHomePage()
+        elif selection == '2':
+            createNewAccount()
+            break
+        elif selection == '3':
+            s.close()
+            exit()
+        else:
+            print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
 
 #Prototype function that verifies login for testing menu functionality
 def verifyLogin():
@@ -53,7 +61,7 @@ def verifyLogin():
     s.send(("&3" + username + "&-!&&" + password).encode())
     response = s.recv(1024).decode()
     if response[2:] == "True":
-        print ("\nWelcome %s!\n" % (username))
+        print ("\nWelcome %s!" % (username))
         return True
     elif response[2:] == "FalsePassword": 
         print ('\nError ~ Incorrect Password!\n')
@@ -62,19 +70,80 @@ def verifyLogin():
         print ('\nError ~ That username does not exist!\n')
         return False
     
+#Client home page (after log-in)
+def enterHomePage():
+    while True: 
+        selection = input("\nPlease select an option\n1.Chats\n2.Account Settings\n3.Logout\n")
+        if selection == '1':
+            openChats()
+        elif selection == '2':
+            openSettings()
+        elif selection == "3":
+            logOut()
+            return
+        else:
+            print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
 
 
-# Client start up menu
-while True:
-    selection = input("Please select an option\n1.Log in\n2.Create New Account\n")
-    if selection == '1':
-        if verifyLogin():
-            break
-    elif selection == '2':
-        createNewAccount()
-        break
+#Prototype function that creates a new account for testing menu functionality
+def createNewAccount():
+    username = input('Username: ')
+    password = input('Password: ')
+
+    Accounts[username] = password
+    print ("\nWelcome %s!\n" % (username))
+
+
+#Opens active conversations menu 
+def openChats():
+
+    def generateSelectionMenu():
+        i = 1
+        optionMaps = {}
+        print ("Open a chat")
+
+        for conv in Chats.items():
+            print("%d.%s" % (i,conv[0]))
+            optionMaps[i] = conv[0]
+            i+=1        
+        selection = input("%d.Start a new conversation\nq.Go Back" % (i))
+        
+        if selection == "q":
+            return False
+
+        selection = int(selection)
+
+        if selection == i:
+            startNewChat()
+        else:
+            try:
+                enterChatRoom(Chats[optionMaps[selection]],optionMaps[selection])
+            except Exception as e:
+                print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
+
+    while True:
+        if len(Chats) == 0:
+            print("\nYou have no active conversations!\n")
+            selection = input("1.Start a new conversation\nq.Go Back\n")
+            if selection == "1":
+                startNewChat()
+            elif selection == "q":
+                break
+            else:
+                print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
+          
+        else: 
+            if generateSelectionMenu() == False:
+                break
+
+#Function that authenticates a user to start a new chat
+def startNewChat():
+    user = input ("\nPlease enter a user's username to chat with: ")
+    if verifyUser(user):
+        print("\nYou started a new conversation with %s!\n" % (user))
+        Chats[user] = ""
     else:
-        print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
+        print("\nError ~ User does not exists.\n")
 
 
 #Prototype function that authenticates a user exists from server
@@ -84,21 +153,6 @@ def verifyUser(user):
     if response[2:] == "True":
         return True
     return False
-
-#Function that attempts to establish a new conversation
-def startNewChat():
-    user = input ("\nPlease enter a user's username to chat with: ")
-    if verifyUser(user):
-        print("\nYou started a new conversation with %s!\n" % (user))
-        Chats[user] = ""
-    else:
-        print("\nError ~ User does not exists.\n")
-
-#Function that will run in a thread when in a chat room to recieve messages
-def listen_for_messages():
-    while True:
-        message = s.recv(1024).decode()
-        print("\n" + message)
 
 def enterChatRoom(chat,user):
     print ("\nEnter q to exit\n")
@@ -121,10 +175,18 @@ def enterChatRoom(chat,user):
         # finally, send the message
         s.send(("&2" + user + "&-!&&" + to_send).encode())
 
+#Function that will run in a thread when in a chat room to recieve messages
+def listen_for_messages():
+    while True:
+        message = s.recv(1024).decode()
+        print("\n" + message)
 
+            
+#Opens user settings menu
+def openSettings():
 
-#Opens active conversations menu 
-def openChats():
+    def deleteAccount():
+        pass
 
     def generateSelectionMenu():
         i = 1
@@ -147,24 +209,22 @@ def openChats():
                 print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
 
     while True:
-        if len(Chats) == 0:
-            print("\nYou have no active conversations!\n")
-            startNewChat()
-        else: 
+        selection = input("\nPlease select an option\n1.Delete Message History\n2.Delete Account\nq.Go back\n")
+        if selection == '1':
             generateSelectionMenu()
-            
-    
-#Client home page (after log-in)
-while True: 
-    selection = input("Please select an option\n1.Chats\n2.Account Settings\n")
-    if selection == '1':
-        openChats()
-    elif selection == '2':
-        createNewAccount()
-        break
-    else:
-        print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
+        elif selection == '2':
+            deleteAccount()
+            break
+        elif selection == "q":
+            break
+        else:
+            print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
 
+def logOut():
+    pass
+
+if __name__ == "__main__":
+    main()
 
 """"
 # make a thread that listens for messages to this client & print them
@@ -186,5 +246,4 @@ while True:
     # finally, send the message
     s.send(to_send.encode())
 """
-# close the socket
-s.close()
+
