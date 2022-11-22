@@ -24,15 +24,50 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 5002  # server's port
 separator_token = "<SEP>"  # we will use this to separate the client name & message
 
+#Temporary placeholder accounts to test prototype menu/messaging functionality
+Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
+
 # initialize TCP socket
 s = socket.socket()
 print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
 # connect to the server
 s.connect((SERVER_HOST, SERVER_PORT))
-print("[+] Connected.")
-# prompt the client for a name
-name = input("Enter your name: ")
+print("[+] Connected.\n")
 
+#Prototype function that creates a new account for testing menu functionality
+def createNewAccount():
+    username = input('Username: ')
+    password = input('Password: ')
+
+    Accounts[username] = password
+    print ("\nWelcome %s!\n" % (username))
+
+#Prototype function that verifies login for testing menu functionality
+def verifyLogin():
+    username = input('Username: ')
+    password = input('Password: ')
+    
+    try: 
+        if Accounts[username] == password:
+            print ("\nWelcome %s!\n" % (username))
+            return True
+        print ('\nError ~ Incorrect Password!\n')    
+        return False
+    except Exception as e:
+        print ('\nError ~ That username does not exist!\n')
+    
+
+# Client start up menu
+while True:
+    selection = input("Please select an option\n1.Log in\n2.Create New Account\n")
+    if selection == '1':
+        if verifyLogin():
+            break
+    elif selection == '2':
+        createNewAccount()
+        break
+    else:
+        print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")     
 
 def listen_for_messages():
     while True:
