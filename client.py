@@ -27,6 +27,9 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 #Temporary placeholder accounts to test prototype menu/messaging functionality
 Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
 
+#Temporary placeholder user chats to test prototype menu/messaging functionality
+Chats = {}
+
 # initialize TCP socket
 s = socket.socket()
 print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
@@ -67,12 +70,54 @@ while True:
         createNewAccount()
         break
     else:
-        print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")     
+        print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
+
+
+#Prototype function that authenticates a user exists from server
+def verifyUser(user):
+    s.send(("&1"+user).encode())
+    response = s.recv(1024).decode()
+    if response[2:] == "True":
+        return True
+    return False
+
+#Function that attempts to establish a new conversation
+def startNewChat():
+    user = input ("\nPlease enter a user's username to chat with: ")
+    if verifyUser(user):
+        print("\nUser Exists!\n")
+    else:
+        print("\nError ~ User does not exists.\n")
+
+#Opens active conversations menu 
+def openChats():
+    i = 1
+    if len(Chats) == 0:
+        print("\nYou have no active conversations!\n")
+        startNewChat()
+    else: 
+        for conv in Chats:
+            print("%d.%s" % (i,conv[0]))
+            i+=1
+        print("%d.")
+    
+#Client home page (after log-in)
+while True: 
+    selection = input("Please select an option\n1.Chats\n2.Account Settings\n")
+    if selection == '1':
+        openChats()
+    elif selection == '2':
+        createNewAccount()
+        break
+    else:
+        print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
+
 
 def listen_for_messages():
     while True:
         message = s.recv(1024).decode()
         print("\n" + message)
+
 
 
 # make a thread that listens for messages to this client & print them
