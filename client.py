@@ -37,10 +37,7 @@ activeUser = None
 #Keeps track of which active conversation is currently open
 activeConv = None
 
-#Temporary placeholder accounts to test prototype menu/messaging functionality
-Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
-
-#Temporary placeholder user chats to test prototype menu/messaging functionality
+#Temporary placeholder for user chats to test prototype menu/messaging functionality
 Chats = {}
 
 # initialize TCP socket
@@ -64,8 +61,8 @@ def main():
             if verifyLogin():
                 enterHomePage()
         elif selection == '2':
-            createNewAccount()
-            break
+            if createNewAccount():
+                enterHomePage()
         elif selection == '3':
             s.close()
             exit()
@@ -87,10 +84,13 @@ def responseHandlerThread():
         
         if activeConv == username:
             print (formattedMsg)
-            Chats[username] +=  formattedMsg
+            Chats[username] +=  formattedMsg    
         else: 
-            Chats[username] +=  formattedMsg
-        
+            try:
+                Chats[username] +=  formattedMsg
+            except Exception as e:
+                #The case when a chat is sent from someone whos chat you have not added
+                Chats[username] = formattedMsg
     while True:        
         msg = s.recv(1024).decode() 
         requestCode = msg[:2]
@@ -104,6 +104,8 @@ def responseHandlerThread():
             responseWait.release()
 
 
+
+
 #Function that verifies login form server
 def verifyLogin():
     global activeUser
@@ -111,13 +113,7 @@ def verifyLogin():
     username = input('Username: ')
     password = input('Password: ')
 
-    responseWait.acquire()
-
-    s.send(("&3" + username + "&-!&&" + password).encode())
-
-    responseWait.wait()
-    response = requestResponse
-    responseWait.release()
+    response = sync_send(("&3" + username + "&-!&&" + password).encode())
     
     if response[2:] == "True":
         print ("\nWelcome %s!" % (username))
@@ -131,6 +127,18 @@ def verifyLogin():
         return False
 
 
+#Function that synchronizes with responseHandlerThread to send/receive a request/response from server
+def sync_send(rqst):
+    responseWait.acquire()
+
+    s.send(rqst)
+
+    responseWait.wait()
+    response = requestResponse
+    responseWait.release()
+    return response 
+
+
 #Client home page (after log-in)
 def enterHomePage():
     while True: 
@@ -138,21 +146,41 @@ def enterHomePage():
         if selection == '1':
             openChats()
         elif selection == '2':
-            openSettings()
+            try:
+                openSettings()
+            #In case the user deleted their account    
+            except Exception as e:
+                break
         elif selection == "3":
             logOut()
             return
         else:
             print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
 
+#Sends logOut signal to server 
+def logOut():
+    global activeUser
+
+    sync_send(("&5"+activeUser).encode())
+    activeUser = None
+
 
 #Prototype function that creates a new account for testing menu functionality
 def createNewAccount():
+    global activeUser
+
     username = input('Username: ')
     password = input('Password: ')
 
-    Accounts[username] = password
-    print ("\nWelcome %s!\n" % (username))
+    response = sync_send(("&4" + username + "&-!&&" + password).encode())
+
+    if response[2:] == "True":
+        print ("\nWelcome %s!" % (username))
+        activeUser = username
+        return True
+    else: 
+        print ('\nError ~ Username already exists!\n')
+        return False
 
 
 #Opens active conversations menu 
@@ -203,13 +231,8 @@ def openChats():
 def startNewChat():
     
     def verifyUser(user):
-        responseWait.acquire()
-        
-        s.send(("&1"+user).encode())
-
-        responseWait.wait()
-        response = requestResponse
-        responseWait.release()
+    
+        response = sync_send(("&1"+user).encode())
         
         if response[2:] == "True":
             return True
@@ -252,8 +275,12 @@ def enterChatRoom(user):
 #Opens user settings menu
 def openSettings():
 
+    #Sends a signal to server to delete activeUser's account
     def deleteAccount():
-        pass
+        global activeUser
+
+        sync_send(("&6"+activeUser).encode())
+        activeUser = None
     
     #Generates menu that allows user to delete currently active chats, history and all (locally for now)
     def generateSelectionMenu():
@@ -286,15 +313,16 @@ def openSettings():
             if generateSelectionMenu() == False:
                 break
         elif selection == '2':
-            deleteAccount()
-            break
+            if (input("\nAre you sure?[y/n]: ")) == "y":
+                deleteAccount()
+                raise Exception("Account deleted")
+            else:
+                continue
         elif selection == "q":
             break
         else:
             print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
 
-def logOut():
-    pass
 
 if __name__ == "__main__":
     main()
