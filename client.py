@@ -1,5 +1,6 @@
 import socket
 import random
+import threading
 from threading import Thread
 from datetime import datetime
 from colorama import Fore, init, Back
@@ -24,6 +25,18 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 5002  # server's port
 separator_token = "<SEP>"  # we will use this to separate the client name & message
 
+#A condition variable to synchronize timings for sending and receiving requests/responses from the server
+responseWait = threading.Condition()
+
+#Request Responses from server are stored here
+requestResponse = None
+
+#Keeps track of currently logged in user
+activeUser = None
+
+#Keeps track of which active conversation is currently open
+activeConv = None
+
 #Temporary placeholder accounts to test prototype menu/messaging functionality
 Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
 
@@ -37,7 +50,13 @@ print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
 s.connect((SERVER_HOST, SERVER_PORT))
 print("[+] Connected.")
 
-def main():    
+def main():
+
+    #This thread handles all data recieved from server
+    t = Thread(target=responseHandlerThread)
+    t.daemon = True
+    t.start()
+
     # Client start up menu
     while True:
         selection = input("\nPlease select an option\n1.Log in\n2.Create New Account\n3.Exit Client\n")
@@ -53,15 +72,56 @@ def main():
         else:
             print("\nError ~ Incorrect input.\n Please enter a number corresponding to a menu option\n")
 
-#Prototype function that verifies login for testing menu functionality
+
+#Function that handles data sent in from server
+def responseHandlerThread():
+    global requestResponse
+
+    #Handles when a message is sent from another user
+    def handleMessage(msg):
+        parse = msg.split("&-!&&")
+        username = parse[0]
+        message = parse[1]
+
+        formattedMsg = "\n\t[%s]%s\n" % (username,message)
+        
+        if activeConv == username:
+            print (formattedMsg)
+            Chats[username] +=  formattedMsg
+        else: 
+            Chats[username] +=  formattedMsg
+        
+    while True:        
+        msg = s.recv(1024).decode() 
+        requestCode = msg[:2]
+
+        if requestCode == "&2":
+            handleMessage(msg[2:])
+        else:
+            responseWait.acquire()
+            requestResponse = msg
+            responseWait.notify()
+            responseWait.release()
+
+
+#Function that verifies login form server
 def verifyLogin():
+    global activeUser
+
     username = input('Username: ')
     password = input('Password: ')
 
+    responseWait.acquire()
+
     s.send(("&3" + username + "&-!&&" + password).encode())
-    response = s.recv(1024).decode()
+
+    responseWait.wait()
+    response = requestResponse
+    responseWait.release()
+    
     if response[2:] == "True":
         print ("\nWelcome %s!" % (username))
+        activeUser = username
         return True
     elif response[2:] == "FalsePassword": 
         print ('\nError ~ Incorrect Password!\n')
@@ -69,7 +129,8 @@ def verifyLogin():
     else: 
         print ('\nError ~ That username does not exist!\n')
         return False
-    
+
+
 #Client home page (after log-in)
 def enterHomePage():
     while True: 
@@ -97,29 +158,30 @@ def createNewAccount():
 #Opens active conversations menu 
 def openChats():
 
+    #Generates the selection menu for active conversations
     def generateSelectionMenu():
         i = 1
         optionMaps = {}
-        print ("Open a chat")
+        print ("\nOpen a chat")
 
         for conv in Chats.items():
             print("%d.%s" % (i,conv[0]))
             optionMaps[i] = conv[0]
             i+=1        
-        selection = input("%d.Start a new conversation\nq.Go Back" % (i))
+        selection = input("%d.Start a new conversation\nq.Go Back\n" % (i))
         
         if selection == "q":
             return False
 
-        selection = int(selection)
+        try:
+            selection = int(selection)
 
-        if selection == i:
-            startNewChat()
-        else:
-            try:
-                enterChatRoom(Chats[optionMaps[selection]],optionMaps[selection])
-            except Exception as e:
-                print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
+            if selection == i:
+                startNewChat()
+            else:
+                enterChatRoom(optionMaps[selection])
+        except Exception as e:
+            print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
 
     while True:
         if len(Chats) == 0:
@@ -136,8 +198,24 @@ def openChats():
             if generateSelectionMenu() == False:
                 break
 
-#Function that authenticates a user to start a new chat
+
+#Function that authenticates a user exists to start a new conversation with them 
 def startNewChat():
+    
+    def verifyUser(user):
+        responseWait.acquire()
+        
+        s.send(("&1"+user).encode())
+
+        responseWait.wait()
+        response = requestResponse
+        responseWait.release()
+        
+        if response[2:] == "True":
+            return True
+        return False
+
+
     user = input ("\nPlease enter a user's username to chat with: ")
     if verifyUser(user):
         print("\nYou started a new conversation with %s!\n" % (user))
@@ -146,23 +224,13 @@ def startNewChat():
         print("\nError ~ User does not exists.\n")
 
 
-#Prototype function that authenticates a user exists from server
-def verifyUser(user):
-    s.send(("&1"+user).encode())
-    response = s.recv(1024).decode()
-    if response[2:] == "True":
-        return True
-    return False
-
-def enterChatRoom(chat,user):
-    print ("\nEnter q to exit\n")
-
-    t = Thread(target=listen_for_messages)
-    # make the thread daemon so it ends whenever the main thread ends
-    t.daemon = True
-    # start the thread
-    t.start()
-
+#Opens an active chat with a user
+def enterChatRoom(user):
+    global activeConv 
+ 
+    print (Chats[user])
+    print("(Enter q to exit): ")
+    activeConv = user
     while True:
         # input message we want to send to the server
         to_send = input()
@@ -174,12 +242,11 @@ def enterChatRoom(chat,user):
         to_send = date_now + ": " + to_send
         # finally, send the message
         s.send(("&2" + user + "&-!&&" + to_send).encode())
+        formattedMsg = "\n\t[%s]%s\n" % (activeUser,to_send)
+        print (formattedMsg)
+        Chats[user] += formattedMsg
 
-#Function that will run in a thread when in a chat room to recieve messages
-def listen_for_messages():
-    while True:
-        message = s.recv(1024).decode()
-        print("\n" + message)
+    activeConv = None
 
             
 #Opens user settings menu
@@ -187,31 +254,37 @@ def openSettings():
 
     def deleteAccount():
         pass
-
+    
+    #Generates menu that allows user to delete currently active chats, history and all (locally for now)
     def generateSelectionMenu():
         i = 1
         optionMaps = {}
-        print ("Open a chat")
+        print ("\nSelect a chat to delete\n")
 
         for conv in Chats.items():
             print("%d.%s" % (i,conv[0]))
             optionMaps[i] = conv[0]
             i+=1        
-        print("%d.Start a new conversation" % (i))
-        selection = int(input())
+        selection = input("q.Go Back\n")
+        
+        if selection == "q":
+            return False
 
-        if selection == i:
-            startNewChat()
-        else:
-            try:
-                enterChatRoom(Chats[optionMaps[selection]],optionMaps[selection])
-            except Exception as e:
-                print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
+        selection = int(selection)
+
+        try:
+            del Chats[optionMaps[selection]]
+        except Exception as e:
+            print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
 
     while True:
         selection = input("\nPlease select an option\n1.Delete Message History\n2.Delete Account\nq.Go back\n")
         if selection == '1':
-            generateSelectionMenu()
+            if len(Chats) == 0:
+                print("\nYou have no active conversations!\n")
+                continue
+            if generateSelectionMenu() == False:
+                break
         elif selection == '2':
             deleteAccount()
             break
