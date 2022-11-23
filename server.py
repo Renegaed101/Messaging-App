@@ -42,25 +42,31 @@ def verifyLogin(credentials,cs):
     try: 
         if Accounts[username] == password:
             print ("\nWelcome %s!\n" % (username))
-            cs.send("&2True".encode())
+            cs.send("&3True".encode())
             user_socket_Mapping[username] = cs
         else:
             print ('\nError ~ Incorrect Password!\n')    
-            cs.send("&2FalsePassword".encode())
+            cs.send("&3FalsePassword".encode())
     except Exception as e:
         print ('\nError ~ That username does not exist!\n')
-        cs.send("&2FalseUsername".encode())
+        cs.send("&3FalseUsername".encode())
 
 
-#Handles when a client want to send a message to another client
+#Handles when a client wants to send a message to another client
 def sendMessage(message,cs):
     parse = message.split("&-!&&")
     username = parse[0]
     payload = parse[1]
 
-    user_socket_Mapping[username].send(payload.encode())
+    userName = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+
+    user_socket_Mapping[username].send(("&2" + userName + "&-!&&" + payload).encode())
+
+#Handles when a client wants to create a new account
+def createNewAccount():
+    pass
     
-Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin}
+Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount}
 
 def listen_for_client(cs):
     """
