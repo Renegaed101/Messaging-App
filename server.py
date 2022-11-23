@@ -25,6 +25,20 @@ print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
 #Format : (username:password)
 Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
 
+def main():
+    while True:
+        # we keep listening for new connections all the time
+        client_socket, client_address = s.accept()
+        print(f"[+] {client_address} connected.")
+        # add the new connected client to connected sockets
+        client_sockets.add(client_socket)
+        # start a new thread that listens for each client's messages
+        t = Thread(target=listen_for_client, args=(client_socket,))
+        # make the thread daemon so it ends whenever the main thread ends
+        t.daemon = True
+        # start the thread
+        t.start()
+
 #Handles when a verifyUser request is recieved from client
 def verifyUser(user,cs):
         if user in Accounts.keys():
@@ -42,25 +56,55 @@ def verifyLogin(credentials,cs):
     try: 
         if Accounts[username] == password:
             print ("\nWelcome %s!\n" % (username))
-            cs.send("&2True".encode())
+            cs.send("&3True".encode())
             user_socket_Mapping[username] = cs
         else:
             print ('\nError ~ Incorrect Password!\n')    
-            cs.send("&2FalsePassword".encode())
+            cs.send("&3FalsePassword".encode())
     except Exception as e:
         print ('\nError ~ That username does not exist!\n')
-        cs.send("&2FalseUsername".encode())
+        cs.send("&3FalseUsername".encode())
 
 
-#Handles when a client want to send a message to another client
+#Handles when a user wants to send a message to another user 
 def sendMessage(message,cs):
     parse = message.split("&-!&&")
     username = parse[0]
     payload = parse[1]
 
-    user_socket_Mapping[username].send(payload.encode())
+    userName = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+
+    user_socket_Mapping[username].send(("&2" + userName + "&-!&&" + payload).encode())
+
+#Handles request from client where user wants to make a new account
+def createNewAccount(credentials,cs):
+    parse = credentials.split("&-!&&")
+    username = parse[0]
+    password = parse[1]
     
-Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin}
+    if username not in Accounts.keys():
+        Accounts[username] = password
+        print ("\nWelcome %s!\n" % (username))
+        cs.send("&4True".encode())
+        user_socket_Mapping[username] = cs
+    else:
+        print ('\nError ~ Username already exists!\n')    
+        cs.send("&4FalsePassword".encode())
+
+
+#Handles request from user to log them out
+def logOut(username,cs):
+    del user_socket_Mapping[username]
+    cs.send("&5True".encode())    
+
+
+#Handles request from user to delete their account
+def deleteAccount(username,cs):
+    del user_socket_Mapping[username]
+    del Accounts[username]
+    cs.send("&6True".encode())
+
+Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount,"&5":logOut,"&6":deleteAccount}
 
 def listen_for_client(cs):
     """
@@ -91,24 +135,5 @@ def listen_for_client(cs):
             # and send the message
             #client_socket.send(msg.encode())
   
-
-
-
-while True:
-    # we keep listening for new connections all the time
-    client_socket, client_address = s.accept()
-    print(f"[+] {client_address} connected.")
-    # add the new connected client to connected sockets
-    client_sockets.add(client_socket)
-    # start a new thread that listens for each client's messages
-    t = Thread(target=listen_for_client, args=(client_socket,))
-    # make the thread daemon so it ends whenever the main thread ends
-    t.daemon = True
-    # start the thread
-    t.start()
-
-# close client sockets
-for cs in client_sockets:
-    cs.close()
-# close server socket
-s.close()
+if __name__ == "__main__":
+    main()
