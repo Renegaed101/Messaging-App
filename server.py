@@ -9,7 +9,7 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 # initialize list/set of all connected client's sockets
 client_sockets = set()
 #Maps users after they log in to their sockets, allows multiple log-ins from a single client
-#Format : (username:socket)
+#Format : {username:socket}
 user_socket_Mapping = {}
 # create a TCP socket
 s = socket.socket()
@@ -22,8 +22,16 @@ s.listen(5)
 print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
 
 #Placeholder accounts to test functionality while database is not set up
-#Format : (username:password)
+#Format : {username:password}
 Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
+
+#Placeholder message history to test functionality while databse is not set up
+#Format : {user:{otherUser:history}}
+message_history = {"Alice":{},"Bob":{},"Sam":{}}
+
+#Stores messages that were sent to users that were offline
+#Format : {user:[messages]}
+offline_msg_buffer = {"Alice":[],"Bob":[],"Sam":[]}
 
 def main():
     while True:
@@ -49,6 +57,11 @@ def verifyUser(user,cs):
 
 #Handles when a verifyLogin request is recieved from client
 def verifyLogin(credentials,cs):
+
+    def bufferCheck(user):
+        while len(offline_msg_buffer[user]) != 0:
+            cs.send(offline_msg_buffer[user].pop().encode())
+
     parse = credentials.split("&-!&&")
     username = parse[0]
     password = parse[1]
@@ -58,6 +71,7 @@ def verifyLogin(credentials,cs):
             print ("\nWelcome %s!\n" % (username))
             cs.send("&3True".encode())
             user_socket_Mapping[username] = cs
+            bufferCheck(username)
         else:
             print ('\nError ~ Incorrect Password!\n')    
             cs.send("&3FalsePassword".encode())
@@ -68,13 +82,32 @@ def verifyLogin(credentials,cs):
 
 #Handles when a user wants to send a message to another user 
 def sendMessage(message,cs):
+
+    def updateMsgHistory(rcvr,sndr,msg):
+        formattedMsg = "\n\t[%s]%s\n" % (sndr,msg)
+        try:
+            message_history[sndr][rcvr] += formattedMsg
+            message_history[rcvr][sndr] += formattedMsg
+        except Exception as e:
+            #This is the case where no message history yet exists for the two users 
+            message_history[sndr][rcvr] = formattedMsg
+            message_history[rcvr][sndr] = formattedMsg
+     
+
     parse = message.split("&-!&&")
-    username = parse[0]
+    rcvUsername = parse[0]
     payload = parse[1]
 
-    userName = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
 
-    user_socket_Mapping[username].send(("&2" + userName + "&-!&&" + payload).encode())
+    updateMsgHistory(rcvUsername,senderUsername,payload)
+
+    try:
+        user_socket_Mapping[rcvUsername].send(("&2" + senderUsername + "&-!&&" + payload).encode())
+    except Exception as e:
+        #Case where an attempt is made to send someone a message that isn't online
+        offline_msg_buffer[rcvUsername].append(("&2" + senderUsername + "&-!&&" + payload).encode())
+
 
 #Handles request from client where user wants to make a new account
 def createNewAccount(credentials,cs):
@@ -87,6 +120,8 @@ def createNewAccount(credentials,cs):
         print ("\nWelcome %s!\n" % (username))
         cs.send("&4True".encode())
         user_socket_Mapping[username] = cs
+        message_history[username] = {}
+        offline_msg_buffer[username] = []
     else:
         print ('\nError ~ Username already exists!\n')    
         cs.send("&4FalsePassword".encode())
