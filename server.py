@@ -1,5 +1,7 @@
 import socket
+import time
 from threading import Thread
+
 
 # server's IP address
 SERVER_HOST = "0.0.0.0"
@@ -8,22 +10,32 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 
 # initialize list/set of all connected client's sockets
 client_sockets = set()
+
 #Maps users after they log in to their sockets, allows multiple log-ins from a single client
-#Format : (username:socket)
+#Format : {username:socket}
 user_socket_Mapping = {}
+
 # create a TCP socket
 s = socket.socket()
+
 # make the port as reusable port
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
 # bind the socket to the address we specified
 s.bind((SERVER_HOST, SERVER_PORT))
+
 # listen for upcoming connections
 s.listen(5)
 print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
 
 #Placeholder accounts to test functionality while database is not set up
-#Format : (username:password)
+#Format : {username:password}
 Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
+
+#Placeholder message history to test functionality while databse is not set up
+#Format : {user:{otherUser:history}}
+message_history = {"Alice":{},"Bob":{},"Sam":{}}
+
 
 def main():
     while True:
@@ -41,14 +53,17 @@ def main():
 
 #Handles when a verifyUser request is recieved from client
 def verifyUser(user,cs):
-        if user in Accounts.keys():
-            cs.send("&1True".encode())
-            return
-        cs.send("&1False".encode())    
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    if user in Accounts.keys():
+        message_history[senderUsername][user] = ""
+        cs.send("&1True".encode())
         return
+    cs.send("&1False".encode())    
+    return
 
 #Handles when a verifyLogin request is recieved from client
 def verifyLogin(credentials,cs):
+
     parse = credentials.split("&-!&&")
     username = parse[0]
     password = parse[1]
@@ -68,13 +83,32 @@ def verifyLogin(credentials,cs):
 
 #Handles when a user wants to send a message to another user 
 def sendMessage(message,cs):
+
+    def updateMsgHistory(rcvr,sndr,msg):
+        formattedMsg = "\n\t[%s]%s\n" % (sndr,msg)
+        try:
+            message_history[sndr][rcvr] += formattedMsg
+            message_history[rcvr][sndr] += formattedMsg
+        except Exception as e:
+            #This is the case where no message history yet exists for the two users 
+            message_history[sndr][rcvr] = formattedMsg
+            message_history[rcvr][sndr] = formattedMsg
+     
+
     parse = message.split("&-!&&")
-    username = parse[0]
+    rcvUsername = parse[0]
     payload = parse[1]
 
-    userName = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
 
-    user_socket_Mapping[username].send(("&2" + userName + "&-!&&" + payload).encode())
+    updateMsgHistory(rcvUsername,senderUsername,payload)
+
+    try:
+        user_socket_Mapping[rcvUsername].send(("&2" + senderUsername + "&-!&&" + payload).encode())
+    except Exception as e:
+        #Case where an attempt is made to send someone a message that isn't online
+        pass
+
 
 #Handles request from client where user wants to make a new account
 def createNewAccount(credentials,cs):
@@ -87,6 +121,7 @@ def createNewAccount(credentials,cs):
         print ("\nWelcome %s!\n" % (username))
         cs.send("&4True".encode())
         user_socket_Mapping[username] = cs
+        message_history[username] = {}
     else:
         print ('\nError ~ Username already exists!\n')    
         cs.send("&4FalsePassword".encode())
@@ -102,9 +137,31 @@ def logOut(username,cs):
 def deleteAccount(username,cs):
     del user_socket_Mapping[username]
     del Accounts[username]
+    del message_history[username]  
     cs.send("&6True".encode())
 
-Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount,"&5":logOut,"&6":deleteAccount}
+#Handles request from user to view chat history
+def retrieveHistory(user,cs):
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    cs.send(("&7"+message_history[senderUsername][user]).encode())
+
+#Handles request from user to view their active chats
+def retrieveChat(user,cs):
+    response = "&8"
+    for chat in message_history[user].keys():
+        response += "&-!&&" + chat
+    cs.send(response.encode())
+
+#Handles request from user to delete a chat's history (will only delete their copy)
+def deleteChatHistory(user,cs):
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    message_history[senderUsername][user] = ""
+    cs.send("&9True".encode())
+
+#Mapping of request commands to functions
+Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount, \
+            "&5":logOut,"&6":deleteAccount,"&7":retrieveHistory,"&8":retrieveChat, \
+            "&9":deleteChatHistory}
 
 def listen_for_client(cs):
     """
@@ -115,7 +172,9 @@ def listen_for_client(cs):
         try:
             # keep listening for a message from `cs` socket
             msg = cs.recv(1024).decode() 
+            # pull out request code
             requestCode = msg[:2]
+            # launch function for request 
             Requests[requestCode](msg[2:],cs)
                       
         except Exception as e:
@@ -126,14 +185,6 @@ def listen_for_client(cs):
             client_sockets.remove(cs)
             return
         
-            # if we received a message, replace the <SEP>
-            # token with ": " for nice printing
-            #msg = msg.replace(separator_token, ": ")
-            
-        # iterate over all connected sockets
-        #for client_socket in client_sockets:
-            # and send the message
-            #client_socket.send(msg.encode())
   
 if __name__ == "__main__":
     main()
