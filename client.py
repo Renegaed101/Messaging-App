@@ -37,8 +37,8 @@ activeUser = None
 #Keeps track of which active conversation is currently open
 activeConv = None
 
-#Temporary placeholder for user chats to test prototype menu/messaging functionality
-Chats = {}
+#List of active chats
+Chats = []
 
 # initialize TCP socket
 s = socket.socket()
@@ -80,22 +80,15 @@ def responseHandlerThread():
         username = parse[0]
         message = parse[1]
 
-        formattedMsg = "\n\t[%s]%s\n" % (username,message)
-        
-        if activeConv == username:
-            print (formattedMsg)
-            Chats[username] +=  formattedMsg    
-        else: 
-            try:
-                Chats[username] +=  formattedMsg
-            except Exception as e:
-                #The case when a chat is sent from someone whos chat you have not added
-                Chats[username] = formattedMsg
+        if activeConv == username:       
+            formattedMsg = "\n\t[%s]%s\n" % (username,message)
+            print (formattedMsg) 
+    
     while True:        
         msg = s.recv(1024).decode() 
         requestCode = msg[:2]
 
-        if requestCode == "&2":
+        if requestCode == "&2" and activeConv != None:
             handleMessage(msg[2:])
         else:
             responseWait.acquire()
@@ -123,6 +116,7 @@ def verifyLogin():
         print ('\nError ~ Incorrect Password!\n')
         return False
     else: 
+        print (response)
         print ('\nError ~ That username does not exist!\n')
         return False
 
@@ -186,15 +180,26 @@ def createNewAccount():
 #Opens active conversations menu 
 def openChats():
 
+    def retrieveChats():
+        global Chats
+
+        response = sync_send(("&8"+activeUser).encode())
+        newChats = response[7:].split("&-!&&")
+        if newChats == [""]:
+            Chats = []
+        else:
+            Chats = newChats
+        
+            
     #Generates the selection menu for active conversations
     def generateSelectionMenu():
         i = 1
         optionMaps = {}
         print ("\nOpen a chat")
 
-        for conv in Chats.items():
-            print("%d.%s" % (i,conv[0]))
-            optionMaps[i] = conv[0]
+        for conv in Chats:
+            print("%d.%s" % (i,conv))
+            optionMaps[i] = conv
             i+=1        
         selection = input("%d.Start a new conversation\nq.Go Back\n" % (i))
         
@@ -212,6 +217,7 @@ def openChats():
             print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
 
     while True:
+        retrieveChats()
         if len(Chats) == 0:
             print("\nYou have no active conversations!\n")
             selection = input("1.Start a new conversation\nq.Go Back\n")
@@ -242,7 +248,6 @@ def startNewChat():
     user = input ("\nPlease enter a user's username to chat with: ")
     if verifyUser(user):
         print("\nYou started a new conversation with %s!\n" % (user))
-        Chats[user] = ""
     else:
         print("\nError ~ User does not exists.\n")
 
@@ -250,30 +255,37 @@ def startNewChat():
 #Opens an active chat with a user
 def enterChatRoom(user):
     global activeConv 
- 
-    print (Chats[user])
+    
+    def retrieveHistory():
+        response = sync_send(("&7"+user).encode())
+        hist = response[2:]
+        if hist == "":
+            print ("\nNo message History\n")
+        else:
+            print(response[2:])
+               
+    retrieveHistory()
     print("(Enter q to exit): ")
     activeConv = user
     while True:
-        # input message we want to send to the server
         to_send = input()
-        # a way to exit the program
         if to_send.lower() == 'q':
             break
         # add the datetime, name & the color of the sender
         date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         to_send = date_now + ": " + to_send
-        # finally, send the message
         s.send(("&2" + user + "&-!&&" + to_send).encode())
         formattedMsg = "\n\t[%s]%s\n" % (activeUser,to_send)
         print (formattedMsg)
-        Chats[user] += formattedMsg
 
     activeConv = None
 
             
 #Opens user settings menu
 def openSettings():
+
+    def deleteChatHistory(chat):
+        sync_send(("&9"+chat).encode())
 
     #Sends a signal to server to delete activeUser's account
     def deleteAccount():
@@ -286,11 +298,12 @@ def openSettings():
     def generateSelectionMenu():
         i = 1
         optionMaps = {}
-        print ("\nSelect a chat to delete\n")
+        print ("\nSelect a chat to delete it's history\nNote ~ this will only delete"+\
+                " your copy\n")
 
-        for conv in Chats.items():
-            print("%d.%s" % (i,conv[0]))
-            optionMaps[i] = conv[0]
+        for conv in Chats:
+            print("%d.%s" % (i,conv))
+            optionMaps[i] = conv
             i+=1        
         selection = input("q.Go Back\n")
         
@@ -300,7 +313,7 @@ def openSettings():
         selection = int(selection)
 
         try:
-            del Chats[optionMaps[selection]]
+            deleteChatHistory(optionMaps[selection])
         except Exception as e:
             print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
 
