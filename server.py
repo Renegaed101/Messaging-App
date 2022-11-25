@@ -1,5 +1,7 @@
 import socket
+import time
 from threading import Thread
+
 
 # server's IP address
 SERVER_HOST = "0.0.0.0"
@@ -8,15 +10,20 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 
 # initialize list/set of all connected client's sockets
 client_sockets = set()
+
 #Maps users after they log in to their sockets, allows multiple log-ins from a single client
 #Format : {username:socket}
 user_socket_Mapping = {}
+
 # create a TCP socket
 s = socket.socket()
+
 # make the port as reusable port
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
 # bind the socket to the address we specified
 s.bind((SERVER_HOST, SERVER_PORT))
+
 # listen for upcoming connections
 s.listen(5)
 print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
@@ -49,18 +56,22 @@ def main():
 
 #Handles when a verifyUser request is recieved from client
 def verifyUser(user,cs):
-        if user in Accounts.keys():
-            cs.send("&1True".encode())
-            return
-        cs.send("&1False".encode())    
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    if user in Accounts.keys():
+        message_history[senderUsername][user] = ""
+        cs.send("&1True".encode())
         return
+    cs.send("&1False".encode())    
+    return
 
 #Handles when a verifyLogin request is recieved from client
 def verifyLogin(credentials,cs):
 
     def bufferCheck(user):
         while len(offline_msg_buffer[user]) != 0:
-            cs.send(offline_msg_buffer[user].pop().encode())
+            #To prevent network packet stitching
+            time.sleep(0.0000000000001)
+            cs.send(offline_msg_buffer[user].pop())
 
     parse = credentials.split("&-!&&")
     username = parse[0]
@@ -137,9 +148,22 @@ def logOut(username,cs):
 def deleteAccount(username,cs):
     del user_socket_Mapping[username]
     del Accounts[username]
+    del message_history[username]
+    del offline_msg_buffer[username]   
     cs.send("&6True".encode())
 
-Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount,"&5":logOut,"&6":deleteAccount}
+def retrieveHistory(user,cs):
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    cs.send(("&7"+message_history[senderUsername][user]).encode())
+
+def retrieveChat(user,cs):
+    response = "&8"
+    for chat in message_history[user].keys():
+        response += "&-!&&" + chat
+    cs.send(response.encode())
+
+Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount, \
+            "&5":logOut,"&6":deleteAccount,"&7":retrieveHistory,"&8":retrieveChat}
 
 def listen_for_client(cs):
     """
