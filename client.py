@@ -284,6 +284,9 @@ def enterChatRoom(user):
 #Opens user settings menu
 def openSettings():
 
+    def deleteChatHistory(chat):
+        sync_send(("&9"+chat).encode())
+
     #Sends a signal to server to delete activeUser's account
     def deleteAccount():
         global activeUser
@@ -295,7 +298,8 @@ def openSettings():
     def generateSelectionMenu():
         i = 1
         optionMaps = {}
-        print ("\nSelect a chat to delete\n")
+        print ("\nSelect a chat to delete it's history\nNote ~ this will only delete"+\
+                " your copy\n")
 
         for conv in Chats:
             print("%d.%s" % (i,conv))
@@ -309,7 +313,7 @@ def openSettings():
         selection = int(selection)
 
         try:
-            Chats.remove(optionMaps[selection])
+            deleteChatHistory(optionMaps[selection])
         except Exception as e:
             print("\nError ~ Incorrect input.\n Please enter a number corresponding to a conversation\n")
 
