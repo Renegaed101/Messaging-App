@@ -36,9 +36,6 @@ Accounts = {'Alice':'123','Bob':'123','Sam':'123'}
 #Format : {user:{otherUser:history}}
 message_history = {"Alice":{},"Bob":{},"Sam":{}}
 
-#Stores messages that were sent to users that were offline
-#Format : {user:[messages]}
-offline_msg_buffer = {"Alice":[],"Bob":[],"Sam":[]}
 
 def main():
     while True:
@@ -67,12 +64,6 @@ def verifyUser(user,cs):
 #Handles when a verifyLogin request is recieved from client
 def verifyLogin(credentials,cs):
 
-    def bufferCheck(user):
-        while len(offline_msg_buffer[user]) != 0:
-            #To prevent network packet stitching
-            time.sleep(0.0000000000001)
-            cs.send(offline_msg_buffer[user].pop())
-
     parse = credentials.split("&-!&&")
     username = parse[0]
     password = parse[1]
@@ -82,7 +73,6 @@ def verifyLogin(credentials,cs):
             print ("\nWelcome %s!\n" % (username))
             cs.send("&3True".encode())
             user_socket_Mapping[username] = cs
-            bufferCheck(username)
         else:
             print ('\nError ~ Incorrect Password!\n')    
             cs.send("&3FalsePassword".encode())
@@ -117,7 +107,7 @@ def sendMessage(message,cs):
         user_socket_Mapping[rcvUsername].send(("&2" + senderUsername + "&-!&&" + payload).encode())
     except Exception as e:
         #Case where an attempt is made to send someone a message that isn't online
-        offline_msg_buffer[rcvUsername].append(("&2" + senderUsername + "&-!&&" + payload).encode())
+        pass
 
 
 #Handles request from client where user wants to make a new account
@@ -132,7 +122,6 @@ def createNewAccount(credentials,cs):
         cs.send("&4True".encode())
         user_socket_Mapping[username] = cs
         message_history[username] = {}
-        offline_msg_buffer[username] = []
     else:
         print ('\nError ~ Username already exists!\n')    
         cs.send("&4FalsePassword".encode())
@@ -148,22 +137,31 @@ def logOut(username,cs):
 def deleteAccount(username,cs):
     del user_socket_Mapping[username]
     del Accounts[username]
-    del message_history[username]
-    del offline_msg_buffer[username]   
+    del message_history[username]  
     cs.send("&6True".encode())
 
+#Handles request from user to view chat history
 def retrieveHistory(user,cs):
     senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
     cs.send(("&7"+message_history[senderUsername][user]).encode())
 
+#Handles request from user to view their active chats
 def retrieveChat(user,cs):
     response = "&8"
     for chat in message_history[user].keys():
         response += "&-!&&" + chat
     cs.send(response.encode())
 
+#Handles request from user to delete a chat's history (will only delete their copy)
+def deleteChatHistory(user,cs):
+    senderUsername = [k for k,v in user_socket_Mapping.items() if v == cs][0]
+    message_history[senderUsername][user] = ""
+    cs.send("&9True".encode())
+
+#Mapping of request commands to functions
 Requests = {"&1":verifyUser,"&2":sendMessage,"&3":verifyLogin,"&4":createNewAccount, \
-            "&5":logOut,"&6":deleteAccount,"&7":retrieveHistory,"&8":retrieveChat}
+            "&5":logOut,"&6":deleteAccount,"&7":retrieveHistory,"&8":retrieveChat, \
+            "&9":deleteChatHistory}
 
 def listen_for_client(cs):
     """
@@ -174,7 +172,9 @@ def listen_for_client(cs):
         try:
             # keep listening for a message from `cs` socket
             msg = cs.recv(1024).decode() 
+            # pull out request code
             requestCode = msg[:2]
+            # launch function for request 
             Requests[requestCode](msg[2:],cs)
                       
         except Exception as e:
@@ -185,14 +185,6 @@ def listen_for_client(cs):
             client_sockets.remove(cs)
             return
         
-            # if we received a message, replace the <SEP>
-            # token with ": " for nice printing
-            #msg = msg.replace(separator_token, ": ")
-            
-        # iterate over all connected sockets
-        #for client_socket in client_sockets:
-            # and send the message
-            #client_socket.send(msg.encode())
   
 if __name__ == "__main__":
     main()
