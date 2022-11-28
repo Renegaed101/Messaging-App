@@ -2,10 +2,12 @@ import socket
 import time
 import mongoconfig
 from threading import Thread
+from passwordManagement import encrypt, check_password
 
 # Mongo DB initialization
 db = mongoconfig.initializeConnection()
 users = db.users
+messages = db.messages
 
 # server's IP address
 SERVER_HOST = "0.0.0.0"
@@ -32,14 +34,6 @@ s.bind((SERVER_HOST, SERVER_PORT))
 s.listen(5)
 print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
 
-# Placeholder accounts to test functionality while database is not set up
-#Format : {username:password}
-Accounts = {'Alice': '123', 'Bob': '123', 'Sam': '123'}
-
-# Placeholder message history to test functionality while databse is not set up
-#Format : {user:{otherUser:history}}
-message_history = {"Alice": {}, "Bob": {}, "Sam": {}}
-
 
 def main():
     while True:
@@ -61,7 +55,8 @@ def main():
 def verifyUser(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     if users.count_documents({"username": user}) > 0:
-        message_history[senderUsername][user] = ""
+        messages.insert_many([{"username": senderUsername, "sender": senderUsername, "receiver": user},
+                             {"username": user, "sender": senderUsername, "receiver": user}])
         cs.send("&1True".encode())
         return
     cs.send("&1False".encode())
@@ -75,9 +70,10 @@ def verifyLogin(credentials, cs):
     parse = credentials.split("&-!&&")
     username = parse[0]
     password = parse[1]
-
+    user = users.find_one({"username": username})
+    print(user.get("password"))
     try:
-        if users.count_documents({"username": username, "password": password}) == 1:
+        if check_password(password, user.get("password")):
             print("\nWelcome %s!\n" % (username))
             cs.send("&3True".encode())
             user_socket_Mapping[username] = cs
@@ -92,15 +88,11 @@ def verifyLogin(credentials, cs):
 # Handles when a user wants to send a message to another user
 def sendMessage(message, cs):
 
-    def updateMsgHistory(rcvr, sndr, msg):
-        formattedMsg = "\n\t[%s]%s\n" % (sndr, msg)
-        try:
-            message_history[sndr][rcvr] += formattedMsg
-            message_history[rcvr][sndr] += formattedMsg
-        except Exception as e:
-            # This is the case where no message history yet exists for the two users
-            message_history[sndr][rcvr] = formattedMsg
-            message_history[rcvr][sndr] = formattedMsg
+    def updateMsgHistory(receiver, sender, message):
+        formattedMsg = "\n\t[%s]%s\n" % (sender, message)
+        messages.insert_many(
+            [{"username": sender, "sender": sender, "receiver": receiver, "message": message},
+             {"username": receiver, "sender": sender, "receiver": receiver, "message": message}])
 
     parse = message.split("&-!&&")
     rcvUsername = parse[0]
@@ -125,12 +117,11 @@ def createNewAccount(credentials, cs):
     password = parse[1]
 
     if users.count_documents({"username": username}) == 0:
-        Accounts[username] = password
         print("\nWelcome %s!\n" % (username))
         cs.send("&4True".encode())
         user_socket_Mapping[username] = cs
-        message_history[username] = {}
-        users.insert_one({"username": username, "password": password})
+        encryptedPassword = encrypt(password)
+        users.insert_one({"username": username, "password": encryptedPassword})
     else:
         print('\nError ~ Username already exists!\n')
         cs.send("&4FalsePassword".encode())
@@ -146,7 +137,6 @@ def logOut(username, cs):
 def deleteAccount(username, cs):
     del user_socket_Mapping[username]
     users.delete_one({"username": username})
-    del message_history[username]
     cs.send("&6True".encode())
 
 # Handles request from user to view chat history
@@ -154,15 +144,22 @@ def deleteAccount(username, cs):
 
 def retrieveHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
-    cs.send(("&7"+message_history[senderUsername][user]).encode())
+    cs.send(("&7"+"gaisdi").encode())
 
 # Handles request from user to view their active chats
 
 
 def retrieveChat(user, cs):
     response = "&8"
-    for chat in message_history[user].keys():
-        response += "&-!&&" + chat
+    chatUsers = []
+    for message in messages.find({"username": user, "sender": user}):
+        if message.get("receiver") not in chatUsers:
+            response += "&-!&&" + message.get("receiver")
+            chatUsers.append(message.get("receiver"))
+    for message in messages.find({"username": user, "receiver": user}):
+        if message.get("sender") not in chatUsers:
+            response += "&-!&&" + message.get("sender")
+            chatUsers.append(message.get("sender"))
     cs.send(response.encode())
 
 # Handles request from user to delete a chat's history (will only delete their copy)
@@ -170,7 +167,8 @@ def retrieveChat(user, cs):
 
 def deleteChatHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
-    message_history[senderUsername][user] = ""
+    messages.delete_many(
+        {"username": senderUsername, "sender": senderUsername, "receiver": user})
     cs.send("&9True".encode())
 
 
