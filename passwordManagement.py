@@ -14,15 +14,13 @@ def check_password(password, encryptedpassword):
 
 
 def hash_new_password(password, salt):
+    # Hash password using salt
     pw_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
     return pw_hash
 
 
 def is_correct_password(salt: bytes, pw_hash: bytes, password: str) -> bool:
-    """
-    Given a previously-stored salt and hash, and a password provided by a user
-    trying to log in, check whether the password is correct.
-    """
+    # Check whether password matches using hashed password and salt used
     return hmac.compare_digest(
         pw_hash,
         hashlib.pbkdf2_hmac('sha256', password.encode(), salt, 100000)
