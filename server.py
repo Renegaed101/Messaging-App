@@ -55,8 +55,8 @@ def main():
 def verifyUser(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     if users.count_documents({"username": user}) > 0:
-        messages.insert_many([{"username": senderUsername, "sender": senderUsername, "receiver": user},
-                             {"username": user, "sender": senderUsername, "receiver": user}])
+        messages.insert_many([{"username": senderUsername, "chat_with": user, "history": ""},
+                             {"username":user, "chat_with":senderUsername, "history": ""}])
         cs.send("&1True".encode())
         return
     cs.send("&1False".encode())
@@ -71,7 +71,6 @@ def verifyLogin(credentials, cs):
     username = parse[0]
     password = parse[1]
     user = users.find_one({"username": username})
-    print(user.get("password"))
     try:
         if check_password(password, user.get("password")):
             print("\nWelcome %s!\n" % (username))
@@ -90,9 +89,13 @@ def sendMessage(message, cs):
 
     def updateMsgHistory(receiver, sender, message):
         formattedMsg = "\n\t[%s]%s\n" % (sender, message)
-        messages.insert_many(
-            [{"username": sender, "sender": sender, "receiver": receiver, "message": message},
-             {"username": receiver, "sender": sender, "receiver": receiver, "message": message}])
+        senderDoc = messages.find_one({"username": sender, "chat_with": receiver})
+        receiverDoc = messages.find_one({"username": receiver, "chat_with": sender})
+
+        messages.update_one({"username": sender, "chat_with": receiver},
+                            {"$set": {"history":senderDoc.get("history")+formattedMsg}})
+        messages.update_one({"username": receiver, "chat_with": sender},
+                            {"$set": {"history":receiverDoc.get("history")+formattedMsg}})
 
     parse = message.split("&-!&&")
     rcvUsername = parse[0]
@@ -137,6 +140,9 @@ def logOut(username, cs):
 def deleteAccount(username, cs):
     del user_socket_Mapping[username]
     users.delete_one({"username": username})
+    messages.delete_one({"username":username})
+    messages.update_many({"chat_with":username},
+                         {"$set": {"chat_with":"[deleted] "+username}})
     cs.send("&6True".encode())
 
 # Handles request from user to view chat history
@@ -144,22 +150,16 @@ def deleteAccount(username, cs):
 
 def retrieveHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
-    cs.send(("&7"+"gaisdi").encode())
+    doc = messages.find_one({"username":senderUsername, "chat_with":user})
+    cs.send(("&7"+doc.get("history")).encode())
 
 # Handles request from user to view their active chats
 
 
 def retrieveChat(user, cs):
     response = "&8"
-    chatUsers = []
-    for message in messages.find({"username": user, "sender": user}):
-        if message.get("receiver") not in chatUsers:
-            response += "&-!&&" + message.get("receiver")
-            chatUsers.append(message.get("receiver"))
-    for message in messages.find({"username": user, "receiver": user}):
-        if message.get("sender") not in chatUsers:
-            response += "&-!&&" + message.get("sender")
-            chatUsers.append(message.get("sender"))
+    for msg_history in messages.find({"username": user}):
+            response += "&-!&&" + msg_history.get("chat_with")
     cs.send(response.encode())
 
 # Handles request from user to delete a chat's history (will only delete their copy)
@@ -167,8 +167,8 @@ def retrieveChat(user, cs):
 
 def deleteChatHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
-    messages.delete_many(
-        {"username": senderUsername, "sender": senderUsername, "receiver": user})
+    messages.update_one({"username":senderUsername, "chat_with":user},
+                        {"$set":{"history":""}})
     cs.send("&9True".encode())
 
 
