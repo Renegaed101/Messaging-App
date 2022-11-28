@@ -117,7 +117,6 @@ def verifyLogin():
         print('\nError ~ Incorrect Password!\n')
         return False
     else:
-        print(response)
         print('\nError ~ That username does not exist!\n')
         return False
 
@@ -271,20 +270,25 @@ def enterChatRoom(user):
             print(response[2:])
 
     retrieveHistory()
-    print("(Enter q to exit): ")
-    activeConv = user
-    while True:
-        to_send = input()
-        if to_send.lower() == 'q':
-            break
-        # add the datetime, name & the color of the sender
-        date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        to_send = date_now + ": " + to_send
-        s.send(("&2" + user + "&-!&&" + to_send).encode())
-        formattedMsg = "\n\t[%s]%s\n" % (activeUser, to_send)
-        print(formattedMsg)
+    if "[deleted] " in user:
+        print ("This user has deleted their account, press any key return")
+        input()
+    else:
+        print("(Enter q to exit): ")
+        activeConv = user
+        while True:
+            to_send = input()
+            if to_send.lower() == 'q':
+                break
+            
+            # add the datetime, name & the color of the sender
+            date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            to_send = date_now + ": " + to_send
+            s.send(("&2" + user + "&-!&&" + to_send).encode())
+            formattedMsg = "\n\t[%s]%s\n" % (activeUser, to_send)
+            print(formattedMsg)
 
-    activeConv = None
+        activeConv = None
 
 
 # Opens user settings menu
