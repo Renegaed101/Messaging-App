@@ -171,13 +171,12 @@ def deleteChatHistory(user, cs):
                         {"$set":{"history":""}})
     cs.send("&9True".encode())
 
-def exchangeKeys(key, cs):
-    if key:
+def exchangeKeys(clientKey, cs):
+    if clientKey:
         secret, serverKey = keyexchange.create_public_key()
-        print(secret)
-        cs.send(("&0").encode())
-        #sharedKey = keyexchange.gen_shared_key(key, secret)
-        #print(sharedKey)
+        cs.send(("&0" + str(serverKey)).encode())
+        sharedKey = keyexchange.gen_shared_key(int(clientKey), secret)
+        print(sharedKey)
 
 
 

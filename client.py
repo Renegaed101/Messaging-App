@@ -113,12 +113,10 @@ def verifyLogin():
 
     if response[2:] == "True":
         secret, clientKey = keyexchange.create_public_key()
-        print(secret)
-        key = sync_send(("&0" + str(clientKey)).encode())
-        print(key)
-        # serverKey = int(response[2:])
-        # sharedKey = keyexchange.gen_shared_key(serverKey, secret)
-        # print(sharedKey)
+        response = sync_send(("&0" + str(clientKey)).encode())
+        serverKey = int(response[2:])
+        sharedKey = keyexchange.gen_shared_key(serverKey, secret)
+        print(sharedKey)
 
         
         return True
