@@ -3,6 +3,7 @@ import time
 import mongoconfig
 from threading import Thread
 from passwordManagement import encrypt, check_password
+import keyexchange
 
 # Mongo DB initialization
 db = mongoconfig.initializeConnection()
@@ -64,7 +65,6 @@ def verifyUser(user, cs):
 
 # Handles when a verifyLogin request is recieved from client
 
-
 def verifyLogin(credentials, cs):
 
     parse = credentials.split("&-!&&")
@@ -74,7 +74,7 @@ def verifyLogin(credentials, cs):
     try:
         if check_password(password, user.get("password")):
             print("\nWelcome %s!\n" % (username))
-            cs.send("&3True".encode())
+            cs.send(("&3True").encode())
             user_socket_Mapping[username] = cs
         else:
             print('\nError ~ Incorrect Password!\n')
@@ -171,11 +171,20 @@ def deleteChatHistory(user, cs):
                         {"$set":{"history":""}})
     cs.send("&9True".encode())
 
+def exchangeKeys(key, cs):
+    if key:
+        secret, serverKey = keyexchange.create_public_key()
+        print(secret)
+        cs.send(("&0").encode())
+        #sharedKey = keyexchange.gen_shared_key(key, secret)
+        #print(sharedKey)
+
+
 
 # Mapping of request commands to functions
 Requests = {"&1": verifyUser, "&2": sendMessage, "&3": verifyLogin, "&4": createNewAccount,
             "&5": logOut, "&6": deleteAccount, "&7": retrieveHistory, "&8": retrieveChat,
-            "&9": deleteChatHistory}
+            "&9": deleteChatHistory, "&0": exchangeKeys}
 
 
 def listen_for_client(cs):

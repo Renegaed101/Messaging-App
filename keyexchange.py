@@ -1,31 +1,16 @@
-class DiffeHelman_Endpoint(object):
-    def __init__(self, public_key1, public_key2, private_key):
-        self.public_key1 = public_key1
-        self.public_key2 = public_key2
-        self.private_key = private_key
-        self.full_key = None
+from random import getrandbits
 
-    def generate_partial_key(self):
-        partial_key = self.public_key1**self.private_key
-        partial_key = partial_key % self.public_key2
-        return partial_key
+g = 2
+p = 199
+bits = 32
 
-    def generate_full_key(self, partial_key_r):
-        full_key = partial_key_r**self.private_key
-        full_key = full_key % self.public_key2
-        self.full_key = full_key
-        return full_key
 
-    def encrypt_message(self, message):
-        encrypted_message = ""
-        key = self.full_key
-        for c in message:
-            encrypted_message += chr(ord(c)+key)
-        return encrypted_message
+def create_public_key():
+    secret = getrandbits(bits)
+    public_key = pow(g, secret, p)
+    return secret, public_key
 
-    def decrypt_message(self, encrypted_message):
-        decrypted_message = ""
-        key = self.full_key
-        for c in encrypted_message:
-            decrypted_message += chr(ord(c)-key)
-        return decrypted_message
+
+def gen_shared_key(public_key, secret):
+    shared_key = pow(public_key, secret, p)
+    return shared_key

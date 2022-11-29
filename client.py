@@ -4,6 +4,7 @@ import threading
 from threading import Thread
 from datetime import datetime
 from colorama import Fore, init, Back
+import keyexchange
 
 # init colors
 init()
@@ -107,12 +108,21 @@ def verifyLogin():
     username = input('Username: ')
     password = input('Password: ')
 
+
     response = sync_send(("&3" + username + "&-!&&" + password).encode())
 
     if response[2:] == "True":
-        print("\nWelcome %s!" % (username))
-        activeUser = username
+        secret, clientKey = keyexchange.create_public_key()
+        print(secret)
+        key = sync_send(("&0" + str(clientKey)).encode())
+        print(key)
+        # serverKey = int(response[2:])
+        # sharedKey = keyexchange.gen_shared_key(serverKey, secret)
+        # print(sharedKey)
+
+        
         return True
+
     elif response[2:] == "FalsePassword":
         print('\nError ~ Incorrect Password!\n')
         return False
