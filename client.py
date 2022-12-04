@@ -3,6 +3,7 @@ import threading
 from threading import Thread
 from datetime import datetime
 import keyexchange
+from Crypto.Cipher import AES
 
 # server's IP address
 # if the server is not on this machine,
