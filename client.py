@@ -3,23 +3,6 @@ import threading
 from threading import Thread
 from datetime import datetime
 import keyexchange
-<<<<<<< HEAD
-from Crypto.Cipher import AES
-# init colors
-init()
-
-# set the available colors
-colors = [Fore.BLUE, Fore.CYAN, Fore.GREEN, Fore.LIGHTBLACK_EX,
-          Fore.LIGHTBLUE_EX, Fore.LIGHTCYAN_EX, Fore.LIGHTGREEN_EX,
-          Fore.LIGHTMAGENTA_EX, Fore.LIGHTRED_EX, Fore.LIGHTWHITE_EX,
-          Fore.LIGHTYELLOW_EX, Fore.MAGENTA, Fore.RED, Fore.WHITE, Fore.YELLOW
-          ]
-
-# choose a random color for the client
-client_color = random.choice(colors)
-=======
-
->>>>>>> 7b57db2cda814368d558ce77abf9f6e197a12107
 
 # server's IP address
 # if the server is not on this machine,
@@ -299,12 +282,12 @@ def enterChatRoom(user):
         activeConv = None
 
 
-#encrypts message before being sent
-def encryptMessage(message, sharedKey): 
+# encrypts message before being sent
+def encryptMessage(message, sharedKey):
 
     cipher = AES.new(sharedKey, AES.MODE_EAX)
     nonce = cipher.nonce
-    
+
     ciphertext, tag = cipher.encrypt_and_digest(message.encode('ascii'))
 
     return ciphertext, tag, nonce
@@ -314,7 +297,7 @@ def encryptMessage(message, sharedKey):
 
 def decryptMessage(ciphertext, tag, nonce, sharedKey):
     cipher = AES.new(sharedKey, AES.MODE_EAX, nonce=nonce)
-    
+
     message = cipher.decrypt(ciphertext)
     try:
         cipher.verify(tag)
