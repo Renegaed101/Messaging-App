@@ -97,6 +97,7 @@ def verifyLogin():
     response = sync_send(("&3" + username + "&-!&&" + password).encode())
 
     if response[2:] == "True":
+        activeUser = username
         secret, clientKey = keyexchange.create_public_key()
         response = sync_send(("&0" + str(clientKey)).encode())
         serverKey = int(response[2:])
