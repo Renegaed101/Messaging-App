@@ -5,7 +5,7 @@ from threading import Thread
 from datetime import datetime
 from colorama import Fore, init, Back
 import keyexchange
-
+from Crypto.Cipher import AES
 # init colors
 init()
 
@@ -297,6 +297,30 @@ def enterChatRoom(user):
             print(formattedMsg)
 
         activeConv = None
+
+
+#encrypts message before being sent
+def encryptMessage(message, sharedKey): 
+
+    cipher = AES.new(sharedKey, AES.MODE_EAX)
+    nonce = cipher.nonce
+    
+    ciphertext, tag = cipher.encrypt_and_digest(message.encode('ascii'))
+
+    return ciphertext, tag, nonce
+
+
+# Decrypts recieved message
+
+def decryptMessage(ciphertext, tag, nonce, sharedKey):
+    cipher = AES.new(sharedKey, AES.MODE_EAX, nonce=nonce)
+    
+    message = cipher.decrypt(ciphertext)
+    try:
+        cipher.verify(tag)
+        return message.decode('ascii')
+    except:
+        return false
 
 
 # Opens user settings menu
