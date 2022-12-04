@@ -1,23 +1,9 @@
 import socket
-import random
 import threading
 from threading import Thread
 from datetime import datetime
-from colorama import Fore, init, Back
 import keyexchange
 
-# init colors
-init()
-
-# set the available colors
-colors = [Fore.BLUE, Fore.CYAN, Fore.GREEN, Fore.LIGHTBLACK_EX,
-          Fore.LIGHTBLUE_EX, Fore.LIGHTCYAN_EX, Fore.LIGHTGREEN_EX,
-          Fore.LIGHTMAGENTA_EX, Fore.LIGHTRED_EX, Fore.LIGHTWHITE_EX,
-          Fore.LIGHTYELLOW_EX, Fore.MAGENTA, Fore.RED, Fore.WHITE, Fore.YELLOW
-          ]
-
-# choose a random color for the client
-client_color = random.choice(colors)
 
 # server's IP address
 # if the server is not on this machine,
@@ -108,7 +94,6 @@ def verifyLogin():
     username = input('Username: ')
     password = input('Password: ')
 
-
     response = sync_send(("&3" + username + "&-!&&" + password).encode())
 
     if response[2:] == "True":
@@ -118,7 +103,6 @@ def verifyLogin():
         sharedKey = keyexchange.gen_shared_key(serverKey, secret)
         print(sharedKey)
 
-        
         return True
 
     elif response[2:] == "FalsePassword":
@@ -279,7 +263,7 @@ def enterChatRoom(user):
 
     retrieveHistory()
     if "[deleted] " in user:
-        print ("This user has deleted their account, press any key return")
+        print("This user has deleted their account, press any key return")
         input()
     else:
         print("(Enter q to exit): ")
@@ -288,7 +272,7 @@ def enterChatRoom(user):
             to_send = input()
             if to_send.lower() == 'q':
                 break
-            
+
             # add the datetime, name & the color of the sender
             date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             to_send = date_now + ": " + to_send
