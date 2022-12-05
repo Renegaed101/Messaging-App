@@ -39,5 +39,5 @@ def encrypt_using_password(message, password):
 def decrypt_using_password(encrypted_message, password):
     key = base64.urlsafe_b64encode(password)
     f = Fernet(key)
-    decrypted_message = f.decrypt(encrypted_message.decode())
-    return decrypted_message
+    decrypted_message = f.decrypt(encrypted_message)
+    return decrypted_message.decode()
