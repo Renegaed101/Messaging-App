@@ -3,7 +3,9 @@ import threading
 from threading import Thread
 from datetime import datetime
 import keyexchange
-from Crypto.Cipher import AES
+from keyexchange import encryptMessage
+from keyexchange import decryptMessage
+
 
 # server's IP address
 # if the server is not on this machine,
@@ -27,6 +29,9 @@ activeConv = None
 # List of active chats
 Chats = []
 
+# Keeps track of the current session's shared key
+sharedKey = None
+
 # initialize TCP socket
 s = socket.socket()
 print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
@@ -36,11 +41,18 @@ print("[+] Connected.")
 
 
 def main():
+    global sharedKey
 
     # This thread handles all data recieved from server
     t = Thread(target=responseHandlerThread)
     t.daemon = True
     t.start()
+
+    secret, clientKey = keyexchange.create_public_key()
+    response = sync_send("&0" + str(clientKey))
+    serverKey = int(response[2:])
+    sharedKey = keyexchange.gen_shared_key(serverKey, secret)
+    print(sharedKey)
 
     # Client start up menu
     while True:
@@ -76,8 +88,8 @@ def responseHandlerThread():
 
     while True:
         msg = s.recv(1024).decode()
-        requestCode = msg[:2]
-
+        requestCode,msg = extractRequestCode(msg)
+        
         if requestCode == "&2" and activeConv != None:
             handleMessage(msg[2:])
         else:
@@ -86,6 +98,20 @@ def responseHandlerThread():
             responseWait.notify()
             responseWait.release()
 
+# Function that takes care of key exchange, decryption for incoming messages from server
+# Returns decrypted message, request code
+
+def extractRequestCode(msg):
+    if msg[:2] == "&0":
+        return msg[:2],msg
+    else:
+        parse = msg.split("&-!&&")
+        cyphertext = bytes.fromhex(parse[0])
+        tag = bytes.fromhex(parse[1])
+        nonce = bytes.fromhex(parse[2])
+
+        decrypted_msg = decryptMessage(cyphertext,tag,nonce,sharedKey)
+        return decrypted_msg[:2],decrypted_msg
 
 # Function that verifies login form server
 def verifyLogin():
@@ -94,16 +120,11 @@ def verifyLogin():
     username = input('Username: ')
     password = input('Password: ')
 
-    response = sync_send(("&3" + username + "&-!&&" + password).encode())
+    response = sync_send("&3" + username + "&-!&&" + password)
 
     if response[2:] == "True":
         activeUser = username
-        secret, clientKey = keyexchange.create_public_key()
-        response = sync_send(("&0" + str(clientKey)).encode())
-        serverKey = int(response[2:])
-        sharedKey = keyexchange.gen_shared_key(serverKey, secret)
-        print(sharedKey)
-
+        print("Logged in as",username)
         return True
 
     elif response[2:] == "FalsePassword":
@@ -116,9 +137,13 @@ def verifyLogin():
 
 # Function that synchronizes with responseHandlerThread to send/receive a request/response from server
 def sync_send(rqst):
+    if rqst[:2] != "&0":
+        cyphertext,tag,nonce = encryptMessage(rqst,sharedKey)
+        rqst = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
+
     responseWait.acquire()
 
-    s.send(rqst)
+    s.send(rqst.encode())
 
     responseWait.wait()
     response = requestResponse
@@ -152,7 +177,7 @@ def enterHomePage():
 def logOut():
     global activeUser
 
-    sync_send(("&5"+activeUser).encode())
+    sync_send("&5"+activeUser)
     activeUser = None
 
 
@@ -163,7 +188,7 @@ def createNewAccount():
     username = input('Username: ')
     password = input('Password: ')
 
-    response = sync_send(("&4" + username + "&-!&&" + password).encode())
+    response = sync_send("&4" + username + "&-!&&" + password)
 
     if response[2:] == "True":
         print("\nWelcome %s!" % (username))
@@ -180,7 +205,7 @@ def openChats():
     def retrieveChats():
         global Chats
 
-        response = sync_send(("&8"+activeUser).encode())
+        response = sync_send("&8"+activeUser)
         newChats = response[7:].split("&-!&&")
         if newChats == [""]:
             Chats = []
@@ -237,7 +262,7 @@ def startNewChat():
 
     def verifyUser(user):
 
-        response = sync_send(("&1"+user).encode())
+        response = sync_send("&1"+user)
 
         if response[2:] == "True":
             return True
@@ -255,7 +280,7 @@ def enterChatRoom(user):
     global activeConv
 
     def retrieveHistory():
-        response = sync_send(("&7"+user).encode())
+        response = sync_send("&7"+user)
         hist = response[2:]
         if hist == "":
             print("\nNo message History\n")
@@ -276,49 +301,26 @@ def enterChatRoom(user):
 
             # add the datetime, name & the color of the sender
             date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            to_send = date_now + ": " + to_send
-            s.send(("&2" + user + "&-!&&" + to_send).encode())
+            msg = "&2" + user + "&-!&&" + date_now + ": " + to_send
+            cyphertext,tag,nonce = encryptMessage(msg,sharedKey)
+            encrypted_msg = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
+            s.send(encrypted_msg.encode())
             formattedMsg = "\n\t[%s]%s\n" % (activeUser, to_send)
             print(formattedMsg)
 
         activeConv = None
 
-
-# encrypts message before being sent
-def encryptMessage(message, sharedKey):
-
-    cipher = AES.new(sharedKey, AES.MODE_EAX)
-    nonce = cipher.nonce
-
-    ciphertext, tag = cipher.encrypt_and_digest(message.encode('ascii'))
-
-    return ciphertext, tag, nonce
-
-
-# Decrypts recieved message
-
-def decryptMessage(ciphertext, tag, nonce, sharedKey):
-    cipher = AES.new(sharedKey, AES.MODE_EAX, nonce=nonce)
-
-    message = cipher.decrypt(ciphertext)
-    try:
-        cipher.verify(tag)
-        return message.decode('ascii')
-    except:
-        return false
-
-
 # Opens user settings menu
 def openSettings():
 
     def deleteChatHistory(chat):
-        sync_send(("&9"+chat).encode())
+        sync_send("&9"+chat)
 
     # Sends a signal to server to delete activeUser's account
     def deleteAccount():
         global activeUser
 
-        sync_send(("&6"+activeUser).encode())
+        sync_send("&6"+activeUser)
         activeUser = None
 
     # Generates menu that allows user to delete currently active chats, history and all (locally for now)

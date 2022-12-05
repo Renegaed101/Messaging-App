@@ -4,6 +4,8 @@ import mongoconfig
 from threading import Thread
 from passwordManagement import encrypt, check_password
 import keyexchange
+from keyexchange import encryptMessage
+from keyexchange import decryptMessage
 
 # Mongo DB initialization
 db = mongoconfig.initializeConnection()
@@ -19,8 +21,13 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 client_sockets = set()
 
 # Maps users after they log in to their sockets, allows multiple log-ins from a single client
-#Format : {username:socket}
+# Format : {username:socket}
 user_socket_Mapping = {}
+
+
+# Maps sharedkeys to sockets
+# Format "{socket:sharedKey}"
+sharedKeys = {}
 
 # create a TCP socket
 s = socket.socket()
@@ -52,15 +59,20 @@ def main():
 
 # Handles when a verifyUser request is recieved from client
 
+def send_encrypted(msg,cs):
+    cyphertext,tag,nonce = encryptMessage(msg,sharedKeys[cs])
+    cs.send((cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex()).encode())
+
 
 def verifyUser(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     if users.count_documents({"username": user}) > 0:
         messages.insert_many([{"username": senderUsername, "chat_with": user, "history": ""},
                              {"username":user, "chat_with":senderUsername, "history": ""}])
-        cs.send("&1True".encode())
+        send_encrypted("&1True",cs)
         return
-    cs.send("&1False".encode())
+    send_encrypted("&1False",cs)
+    
     return
 
 # Handles when a verifyLogin request is recieved from client
@@ -74,14 +86,14 @@ def verifyLogin(credentials, cs):
     try:
         if check_password(password, user.get("password")):
             print("\nWelcome %s!\n" % (username))
-            cs.send(("&3True").encode())
+            send_encrypted("&3True",cs)
             user_socket_Mapping[username] = cs
         else:
             print('\nError ~ Incorrect Password!\n')
-            cs.send("&3FalsePassword".encode())
+            send_encrypted("&3FalsePassword",cs)
     except Exception as e:
         print('\nError ~ That username does not exist!\n')
-        cs.send("&3FalseUsername".encode())
+        send_encrypted("&3FalseUsername",cs)
 
 
 # Handles when a user wants to send a message to another user
@@ -106,8 +118,8 @@ def sendMessage(message, cs):
     updateMsgHistory(rcvUsername, senderUsername, payload)
 
     try:
-        user_socket_Mapping[rcvUsername].send(
-            ("&2" + senderUsername + "&-!&&" + payload).encode())
+        send_encrypted("&2" + senderUsername + "&-!&&" + payload,
+            user_socket_Mapping[rcvUsername])
     except Exception as e:
         # Case where an attempt is made to send someone a message that isn't online
         pass
@@ -121,19 +133,19 @@ def createNewAccount(credentials, cs):
 
     if users.count_documents({"username": username}) == 0:
         print("\nWelcome %s!\n" % (username))
-        cs.send("&4True".encode())
+        send_encrypted("&4True",cs)
         user_socket_Mapping[username] = cs
         encryptedPassword = encrypt(password)
         users.insert_one({"username": username, "password": encryptedPassword})
     else:
         print('\nError ~ Username already exists!\n')
-        cs.send("&4FalsePassword".encode())
+        send_encrypted("&4FalsePassword",cs)
 
 
 # Handles request from user to log them out
 def logOut(username, cs):
     del user_socket_Mapping[username]
-    cs.send("&5True".encode())
+    send_encrypted("&5True",cs)
 
 
 # Handles request from user to delete their account
@@ -143,7 +155,7 @@ def deleteAccount(username, cs):
     messages.delete_one({"username":username})
     messages.update_many({"chat_with":username},
                          {"$set": {"chat_with":"[deleted] "+username}})
-    cs.send("&6True".encode())
+    send_encrypted("&6True",cs)
 
 # Handles request from user to view chat history
 
@@ -151,7 +163,7 @@ def deleteAccount(username, cs):
 def retrieveHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     doc = messages.find_one({"username":senderUsername, "chat_with":user})
-    cs.send(("&7"+doc.get("history")).encode())
+    send_encrypted("&7"+doc.get("history"),cs)
 
 # Handles request from user to view their active chats
 
@@ -160,7 +172,7 @@ def retrieveChat(user, cs):
     response = "&8"
     for msg_history in messages.find({"username": user}):
             response += "&-!&&" + msg_history.get("chat_with")
-    cs.send(response.encode())
+    send_encrypted(response,cs)
 
 # Handles request from user to delete a chat's history (will only delete their copy)
 
@@ -169,21 +181,35 @@ def deleteChatHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     messages.update_one({"username":senderUsername, "chat_with":user},
                         {"$set":{"history":""}})
-    cs.send("&9True".encode())
+    send_encrypted("&9True",cs)
 
 def exchangeKeys(clientKey, cs):
     if clientKey:
         secret, serverKey = keyexchange.create_public_key()
         cs.send(("&0" + str(serverKey)).encode())
         sharedKey = keyexchange.gen_shared_key(int(clientKey), secret)
-        print(sharedKey)
-
+        sharedKeys[cs] = sharedKey
 
 
 # Mapping of request commands to functions
 Requests = {"&1": verifyUser, "&2": sendMessage, "&3": verifyLogin, "&4": createNewAccount,
             "&5": logOut, "&6": deleteAccount, "&7": retrieveHistory, "&8": retrieveChat,
             "&9": deleteChatHistory, "&0": exchangeKeys}
+
+
+# Function that takes care of key exchange, decryption for incoming requests
+# Returns decrypted message, request code
+def extractRequestCode(msg,cs):
+    if msg[:2] == "&0":
+        return msg[:2],msg
+    else:
+        parse = msg.split("&-!&&")
+        cyphertext = bytes.fromhex(parse[0])
+        tag = bytes.fromhex(parse[1])
+        nonce = bytes.fromhex(parse[2])
+
+        decrypted_msg = decryptMessage(cyphertext,tag,nonce,sharedKeys[cs])
+        return decrypted_msg[:2],decrypted_msg
 
 
 def listen_for_client(cs):
@@ -196,15 +222,15 @@ def listen_for_client(cs):
             # keep listening for a message from `cs` socket
             msg = cs.recv(1024).decode()
             # pull out request code
-            requestCode = msg[:2]
-            # launch function for request
+            requestCode,msg = extractRequestCode(msg,cs)
             Requests[requestCode](msg[2:], cs)
-
+           
         except Exception as e:
             # client no longer connected
             # remove it from the set
             #print(f"[!] Error: {e}")
             print("A client disconnected")
+            del sharedKeys[cs]
             client_sockets.remove(cs)
             return
 
