@@ -88,8 +88,8 @@ def responseHandlerThread():
 
     while True:
         msg = s.recv(1024).decode()
-        requestCode = msg[:2]
-
+        requestCode,msg = extractRequestCode(msg)
+        
         if requestCode == "&2" and activeConv != None:
             handleMessage(msg[2:])
         else:
@@ -98,6 +98,20 @@ def responseHandlerThread():
             responseWait.notify()
             responseWait.release()
 
+# Function that takes care of key exchange, decryption for incoming messages from server
+# Returns decrypted message, request code
+
+def extractRequestCode(msg):
+    if msg[:2] == "&0":
+        return msg[:2],msg
+    else:
+        parse = msg.split("&-!&&")
+        cyphertext = bytes.fromhex(parse[0])
+        tag = bytes.fromhex(parse[1])
+        nonce = bytes.fromhex(parse[2])
+
+        decrypted_msg = decryptMessage(cyphertext,tag,nonce,sharedKey)
+        return decrypted_msg[:2],decrypted_msg
 
 # Function that verifies login form server
 def verifyLogin():
@@ -287,10 +301,10 @@ def enterChatRoom(user):
 
             # add the datetime, name & the color of the sender
             date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            to_send = date_now + ": " + to_send
-            cyphertext,tag,nonce = encryptMessage(to_send,sharedKey)
-            rqst = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
-            s.send(("&2" + user + "&-!&&" + rqst).encode())
+            msg = "&2" + user + "&-!&&" + date_now + ": " + to_send
+            cyphertext,tag,nonce = encryptMessage(msg,sharedKey)
+            encrypted_msg = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
+            s.send(encrypted_msg.encode())
             formattedMsg = "\n\t[%s]%s\n" % (activeUser, to_send)
             print(formattedMsg)
 
