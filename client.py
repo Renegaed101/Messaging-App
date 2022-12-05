@@ -3,7 +3,9 @@ import threading
 from threading import Thread
 from datetime import datetime
 import keyexchange
-from Crypto.Cipher import AES
+from keyexchange import encryptMessage
+from keyexchange import decryptMessage
+
 
 # server's IP address
 # if the server is not on this machine,
@@ -27,6 +29,9 @@ activeConv = None
 # List of active chats
 Chats = []
 
+# Keeps track of the current session's shared key
+sharedKey = None
+
 # initialize TCP socket
 s = socket.socket()
 print(f"[*] Connecting to {SERVER_HOST}:{SERVER_PORT}...")
@@ -36,11 +41,18 @@ print("[+] Connected.")
 
 
 def main():
+    global sharedKey
 
     # This thread handles all data recieved from server
     t = Thread(target=responseHandlerThread)
     t.daemon = True
     t.start()
+
+    secret, clientKey = keyexchange.create_public_key()
+    response = sync_send("&0" + str(clientKey))
+    serverKey = int(response[2:])
+    sharedKey = keyexchange.gen_shared_key(serverKey, secret)
+    print(sharedKey)
 
     # Client start up menu
     while True:
@@ -94,16 +106,11 @@ def verifyLogin():
     username = input('Username: ')
     password = input('Password: ')
 
-    response = sync_send(("&3" + username + "&-!&&" + password).encode())
+    response = sync_send("&3" + username + "&-!&&" + password)
 
     if response[2:] == "True":
         activeUser = username
-        secret, clientKey = keyexchange.create_public_key()
-        response = sync_send(("&0" + str(clientKey)).encode())
-        serverKey = int(response[2:])
-        sharedKey = keyexchange.gen_shared_key(serverKey, secret)
-        print(sharedKey)
-
+        print("Logged in as",username)
         return True
 
     elif response[2:] == "FalsePassword":
@@ -116,9 +123,13 @@ def verifyLogin():
 
 # Function that synchronizes with responseHandlerThread to send/receive a request/response from server
 def sync_send(rqst):
+    if rqst[:2] != "&0":
+        cyphertext,tag,nonce = encryptMessage(rqst,sharedKey)
+        rqst = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
+
     responseWait.acquire()
 
-    s.send(rqst)
+    s.send(rqst.encode())
 
     responseWait.wait()
     response = requestResponse
@@ -282,31 +293,6 @@ def enterChatRoom(user):
             print(formattedMsg)
 
         activeConv = None
-
-
-# encrypts message before being sent
-def encryptMessage(message, sharedKey):
-
-    cipher = AES.new(sharedKey, AES.MODE_EAX)
-    nonce = cipher.nonce
-
-    ciphertext, tag = cipher.encrypt_and_digest(message.encode('ascii'))
-
-    return ciphertext, tag, nonce
-
-
-# Decrypts recieved message
-
-def decryptMessage(ciphertext, tag, nonce, sharedKey):
-    cipher = AES.new(sharedKey, AES.MODE_EAX, nonce=nonce)
-
-    message = cipher.decrypt(ciphertext)
-    try:
-        cipher.verify(tag)
-        return message.decode('ascii')
-    except:
-        return false
-
 
 # Opens user settings menu
 def openSettings():
