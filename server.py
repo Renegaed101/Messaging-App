@@ -59,15 +59,20 @@ def main():
 
 # Handles when a verifyUser request is recieved from client
 
+def send_encrypted(msg,cs):
+    cyphertext,tag,nonce = encryptMessage(msg,sharedKeys[cs])
+    cs.send((cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex()).encode())
+
 
 def verifyUser(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     if users.count_documents({"username": user}) > 0:
         messages.insert_many([{"username": senderUsername, "chat_with": user, "history": ""},
                              {"username":user, "chat_with":senderUsername, "history": ""}])
-        cs.send("&1True".encode())
+        send_encrypted("&1True",cs)
         return
-    cs.send("&1False".encode())
+    send_encrypted("&1False",cs)
+    
     return
 
 # Handles when a verifyLogin request is recieved from client
@@ -81,14 +86,14 @@ def verifyLogin(credentials, cs):
     try:
         if check_password(password, user.get("password")):
             print("\nWelcome %s!\n" % (username))
-            cs.send(("&3True").encode())
+            send_encrypted("&3True",cs)
             user_socket_Mapping[username] = cs
         else:
             print('\nError ~ Incorrect Password!\n')
-            cs.send("&3FalsePassword".encode())
+            send_encrypted("&3FalsePassword",cs)
     except Exception as e:
         print('\nError ~ That username does not exist!\n')
-        cs.send("&3FalseUsername".encode())
+        send_encrypted("&3FalseUsername",cs)
 
 
 # Handles when a user wants to send a message to another user
@@ -113,8 +118,8 @@ def sendMessage(message, cs):
     updateMsgHistory(rcvUsername, senderUsername, payload)
 
     try:
-        user_socket_Mapping[rcvUsername].send(
-            ("&2" + senderUsername + "&-!&&" + payload).encode())
+        send_encrypted("&2" + senderUsername + "&-!&&" + payload,
+            user_socket_Mapping[rcvUsername])
     except Exception as e:
         # Case where an attempt is made to send someone a message that isn't online
         pass
@@ -128,19 +133,19 @@ def createNewAccount(credentials, cs):
 
     if users.count_documents({"username": username}) == 0:
         print("\nWelcome %s!\n" % (username))
-        cs.send("&4True".encode())
+        send_encrypted("&4True",cs)
         user_socket_Mapping[username] = cs
         encryptedPassword = encrypt(password)
         users.insert_one({"username": username, "password": encryptedPassword})
     else:
         print('\nError ~ Username already exists!\n')
-        cs.send("&4FalsePassword".encode())
+        send_encrypted("&4FalsePassword",cs)
 
 
 # Handles request from user to log them out
 def logOut(username, cs):
     del user_socket_Mapping[username]
-    cs.send("&5True".encode())
+    send_encrypted("&5True",cs)
 
 
 # Handles request from user to delete their account
@@ -150,7 +155,7 @@ def deleteAccount(username, cs):
     messages.delete_one({"username":username})
     messages.update_many({"chat_with":username},
                          {"$set": {"chat_with":"[deleted] "+username}})
-    cs.send("&6True".encode())
+    send_encrypted("&6True",cs)
 
 # Handles request from user to view chat history
 
@@ -158,7 +163,7 @@ def deleteAccount(username, cs):
 def retrieveHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     doc = messages.find_one({"username":senderUsername, "chat_with":user})
-    cs.send(("&7"+doc.get("history")).encode())
+    send_encrypted("&7"+doc.get("history"),cs)
 
 # Handles request from user to view their active chats
 
@@ -167,7 +172,7 @@ def retrieveChat(user, cs):
     response = "&8"
     for msg_history in messages.find({"username": user}):
             response += "&-!&&" + msg_history.get("chat_with")
-    cs.send(response.encode())
+    send_encrypted(response,cs)
 
 # Handles request from user to delete a chat's history (will only delete their copy)
 
@@ -176,7 +181,7 @@ def deleteChatHistory(user, cs):
     senderUsername = [k for k, v in user_socket_Mapping.items() if v == cs][0]
     messages.update_one({"username":senderUsername, "chat_with":user},
                         {"$set":{"history":""}})
-    cs.send("&9True".encode())
+    send_encrypted("&9True",cs)
 
 def exchangeKeys(clientKey, cs):
     if clientKey:
@@ -184,8 +189,6 @@ def exchangeKeys(clientKey, cs):
         cs.send(("&0" + str(serverKey)).encode())
         sharedKey = keyexchange.gen_shared_key(int(clientKey), secret)
         sharedKeys[cs] = sharedKey
-        print(sharedKey)
-
 
 
 # Mapping of request commands to functions
@@ -201,13 +204,11 @@ def extractRequestCode(msg,cs):
         return msg[:2],msg
     else:
         parse = msg.split("&-!&&")
-        print(parse)
         cyphertext = bytes.fromhex(parse[0])
         tag = bytes.fromhex(parse[1])
         nonce = bytes.fromhex(parse[2])
 
         decrypted_msg = decryptMessage(cyphertext,tag,nonce,sharedKeys[cs])
-        print (decrypted_msg)
         return decrypted_msg[:2],decrypted_msg
 
 
@@ -227,7 +228,7 @@ def listen_for_client(cs):
         except Exception as e:
             # client no longer connected
             # remove it from the set
-            print(f"[!] Error: {e}")
+            #print(f"[!] Error: {e}")
             print("A client disconnected")
             del sharedKeys[cs]
             client_sockets.remove(cs)
