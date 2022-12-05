@@ -4,6 +4,8 @@ import mongoconfig
 from threading import Thread
 from passwordManagement import encrypt, check_password
 import keyexchange
+from keyexchange import encryptMessage
+from keyexchange import decryptMessage
 
 # Mongo DB initialization
 db = mongoconfig.initializeConnection()
@@ -19,8 +21,13 @@ separator_token = "<SEP>"  # we will use this to separate the client name & mess
 client_sockets = set()
 
 # Maps users after they log in to their sockets, allows multiple log-ins from a single client
-#Format : {username:socket}
+# Format : {username:socket}
 user_socket_Mapping = {}
+
+
+# Maps sharedkeys to sockets
+# Format "{socket:sharedKey}"
+sharedKeys = {}
 
 # create a TCP socket
 s = socket.socket()
@@ -176,6 +183,7 @@ def exchangeKeys(clientKey, cs):
         secret, serverKey = keyexchange.create_public_key()
         cs.send(("&0" + str(serverKey)).encode())
         sharedKey = keyexchange.gen_shared_key(int(clientKey), secret)
+        sharedKeys[cs] = sharedKey
         print(sharedKey)
 
 
@@ -184,6 +192,23 @@ def exchangeKeys(clientKey, cs):
 Requests = {"&1": verifyUser, "&2": sendMessage, "&3": verifyLogin, "&4": createNewAccount,
             "&5": logOut, "&6": deleteAccount, "&7": retrieveHistory, "&8": retrieveChat,
             "&9": deleteChatHistory, "&0": exchangeKeys}
+
+
+# Function that takes care of key exchange, decryption for incoming requests
+# Returns decrypted message, request code
+def extractRequestCode(msg,cs):
+    if msg[:2] == "&0":
+        return msg[:2],msg
+    else:
+        parse = msg.split("&-!&&")
+        print(parse)
+        cyphertext = bytes.fromhex(parse[0])
+        tag = bytes.fromhex(parse[1])
+        nonce = bytes.fromhex(parse[2])
+
+        decrypted_msg = decryptMessage(cyphertext,tag,nonce,sharedKeys[cs])
+        print (decrypted_msg)
+        return decrypted_msg[:2],decrypted_msg
 
 
 def listen_for_client(cs):
@@ -196,15 +221,15 @@ def listen_for_client(cs):
             # keep listening for a message from `cs` socket
             msg = cs.recv(1024).decode()
             # pull out request code
-            requestCode = msg[:2]
-            # launch function for request
+            requestCode,msg = extractRequestCode(msg,cs)
             Requests[requestCode](msg[2:], cs)
-
+           
         except Exception as e:
             # client no longer connected
             # remove it from the set
-            #print(f"[!] Error: {e}")
+            print(f"[!] Error: {e}")
             print("A client disconnected")
+            del sharedKeys[cs]
             client_sockets.remove(cs)
             return
 
