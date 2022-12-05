@@ -52,7 +52,6 @@ def main():
     response = sync_send("&0" + str(clientKey))
     serverKey = int(response[2:])
     sharedKey = keyexchange.gen_shared_key(serverKey, secret)
-    print(sharedKey)
 
     # Client start up menu
     while True:
@@ -88,8 +87,8 @@ def responseHandlerThread():
 
     while True:
         msg = s.recv(1024).decode()
-        requestCode,msg = extractRequestCode(msg)
-        
+        requestCode, msg = extractRequestCode(msg)
+
         if requestCode == "&2" and activeConv != None:
             handleMessage(msg[2:])
         else:
@@ -101,19 +100,22 @@ def responseHandlerThread():
 # Function that takes care of key exchange, decryption for incoming messages from server
 # Returns decrypted message, request code
 
+
 def extractRequestCode(msg):
     if msg[:2] == "&0":
-        return msg[:2],msg
+        return msg[:2], msg
     else:
         parse = msg.split("&-!&&")
         cyphertext = bytes.fromhex(parse[0])
         tag = bytes.fromhex(parse[1])
         nonce = bytes.fromhex(parse[2])
 
-        decrypted_msg = decryptMessage(cyphertext,tag,nonce,sharedKey)
-        return decrypted_msg[:2],decrypted_msg
+        decrypted_msg = decryptMessage(cyphertext, tag, nonce, sharedKey)
+        return decrypted_msg[:2], decrypted_msg
 
 # Function that verifies login form server
+
+
 def verifyLogin():
     global activeUser
 
@@ -124,7 +126,7 @@ def verifyLogin():
 
     if response[2:] == "True":
         activeUser = username
-        print("Logged in as",username)
+        print("Logged in as", username)
         return True
 
     elif response[2:] == "FalsePassword":
@@ -138,7 +140,7 @@ def verifyLogin():
 # Function that synchronizes with responseHandlerThread to send/receive a request/response from server
 def sync_send(rqst):
     if rqst[:2] != "&0":
-        cyphertext,tag,nonce = encryptMessage(rqst,sharedKey)
+        cyphertext, tag, nonce = encryptMessage(rqst, sharedKey)
         rqst = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
 
     responseWait.acquire()
@@ -302,8 +304,9 @@ def enterChatRoom(user):
             # add the datetime, name & the color of the sender
             date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             msg = "&2" + user + "&-!&&" + date_now + ": " + to_send
-            cyphertext,tag,nonce = encryptMessage(msg,sharedKey)
-            encrypted_msg = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
+            cyphertext, tag, nonce = encryptMessage(msg, sharedKey)
+            encrypted_msg = (cyphertext.hex()+"&-!&&" +
+                             tag.hex()+"&-!&&"+nonce.hex())
             s.send(encrypted_msg.encode())
             formattedMsg = "\n\t[%s]%s\n" % (activeUser, to_send)
             print(formattedMsg)
@@ -311,6 +314,8 @@ def enterChatRoom(user):
         activeConv = None
 
 # Opens user settings menu
+
+
 def openSettings():
 
     def deleteChatHistory(chat):
