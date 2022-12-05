@@ -163,7 +163,7 @@ def enterHomePage():
 def logOut():
     global activeUser
 
-    sync_send(("&5"+activeUser).encode())
+    sync_send("&5"+activeUser)
     activeUser = None
 
 
@@ -174,7 +174,7 @@ def createNewAccount():
     username = input('Username: ')
     password = input('Password: ')
 
-    response = sync_send(("&4" + username + "&-!&&" + password).encode())
+    response = sync_send("&4" + username + "&-!&&" + password)
 
     if response[2:] == "True":
         print("\nWelcome %s!" % (username))
@@ -191,7 +191,7 @@ def openChats():
     def retrieveChats():
         global Chats
 
-        response = sync_send(("&8"+activeUser).encode())
+        response = sync_send("&8"+activeUser)
         newChats = response[7:].split("&-!&&")
         if newChats == [""]:
             Chats = []
@@ -248,7 +248,7 @@ def startNewChat():
 
     def verifyUser(user):
 
-        response = sync_send(("&1"+user).encode())
+        response = sync_send("&1"+user)
 
         if response[2:] == "True":
             return True
@@ -266,7 +266,7 @@ def enterChatRoom(user):
     global activeConv
 
     def retrieveHistory():
-        response = sync_send(("&7"+user).encode())
+        response = sync_send("&7"+user)
         hist = response[2:]
         if hist == "":
             print("\nNo message History\n")
@@ -288,7 +288,9 @@ def enterChatRoom(user):
             # add the datetime, name & the color of the sender
             date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             to_send = date_now + ": " + to_send
-            s.send(("&2" + user + "&-!&&" + to_send).encode())
+            cyphertext,tag,nonce = encryptMessage(to_send,sharedKey)
+            rqst = (cyphertext.hex()+"&-!&&"+tag.hex()+"&-!&&"+nonce.hex())
+            s.send(("&2" + user + "&-!&&" + rqst).encode())
             formattedMsg = "\n\t[%s]%s\n" % (activeUser, to_send)
             print(formattedMsg)
 
@@ -298,13 +300,13 @@ def enterChatRoom(user):
 def openSettings():
 
     def deleteChatHistory(chat):
-        sync_send(("&9"+chat).encode())
+        sync_send("&9"+chat)
 
     # Sends a signal to server to delete activeUser's account
     def deleteAccount():
         global activeUser
 
-        sync_send(("&6"+activeUser).encode())
+        sync_send("&6"+activeUser)
         activeUser = None
 
     # Generates menu that allows user to delete currently active chats, history and all (locally for now)
